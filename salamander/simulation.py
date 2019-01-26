@@ -1,28 +1,29 @@
 import pandas as pd
 import argparse
 import numpy as np
-import random
 import matplotlib.pyplot as plt
-from sklearn import linear_model
+
+# this file contains a main and is hence executable
 
 
 class Portfolio(object):
+    # Simulate price movements for a portfolio of stocks
     def __init__(self, sec1mean, sec2mean, sec1vol, sec2vol, corr, rebalance_threshold):
-        self.numberOfStocks = 2
-        self.initprices = np.asarray([5, 5])
-        self.prices = self.initprices
-        self.initholdings = [10, 10]
-        self.holdings = self.initholdings
-        self.inittotal = 100
-        self.total = self.inittotal
-        self.initweightings = [.5, .5]
-        self.weightings = self.initweightings
+        self.number_of_stocks = 2
+        self.initial_prices = np.asarray([5, 5])
+        self.prices = self.initial_prices
+        self.initial_holdings = 10*np.ones((self.number_of_stocks, ))
+        self.holdings = self.initial_holdings
+        self.initial_total = 100
+        self.total = self.initial_total
+        self.initial_weightings = [.5, .5]
+        self.weightings = self.initial_weightings
         # input
         self.means = np.asarray([sec1mean, sec2mean])
         self.corr = corr
         self.sec1vol = sec1vol
         self.sec2vol = sec2vol
-        self.dailymeans = self.means / 252
+        self.daily_means = self.means / 252
         self.dailysec1vol = self.sec1vol / np.sqrt(252)
         self.dailysec2vol = self.sec2vol / np.sqrt(252)
         dailycov = self.dailysec1vol * self.dailysec2vol * self.corr
@@ -30,139 +31,148 @@ class Portfolio(object):
         self.rebalance_threshold = rebalance_threshold
 
     # simulate price movements
-    def Brownian(self, periods):
+    @staticmethod
+    def brownian(periods):
         dt = 1
         # standard brownian increment = multivariate_normal distribution * sqrt of dt
         b = np.random.multivariate_normal((0., 0.), ((1., 0.), (0., 1.)), int(periods)) * np.sqrt(dt)
         # standard brownian motion for two variables ~ N(0,t)
-        W = np.cumsum(b, axis=0)
-        W = np.insert(W, 0, (0., 0.), axis=0)
-        W = np.asarray(W)
-        return W
+        w = np.cumsum(b, axis=0)
+        w = np.insert(w, 0, (0., 0.), axis=0)
+        w = np.asarray(w)
+        return w
 
-    # So:     initial stock price
-    # W:      brownian motion
-    # T:      time period
-    def GBM(self, W, T):
-        S = []
+    def geometric_brownian_motion(self, w_brownian, _time_period):
+        # Simulate GBM as sum of drift and diffusion term for all assets and all prices in the time period
+        # this means we assume lognormal price movements
+        # w_brownian:      brownian motion
+        # time_period:      time period
+        price_array = []
         # divide time axis from 0 to 1 into T pieces,
-        t = np.linspace(0, T, T + 1)
-        L = np.linalg.cholesky(self.dailycovmat)
-        var = self.dailycovmat.diagonal()
-        for i in range(T + 1):
-            drift = (self.dailymeans - (0.5 * var)) * t[i]
-            diffusion = np.dot(L, W[i])
-            S.append(self.initprices * np.exp(drift + diffusion))
-        S = np.asarray(S)
-        return S
+        time_period = np.linspace(0, _time_period, _time_period + 1)
+        l_cholesky = np.linalg.cholesky(self.dailycovmat)
+        variance = self.dailycovmat.diagonal()
+        for i in range(_time_period + 1):
+            drift = (self.daily_means - (0.5 * variance)) * time_period[i]
+            diffusion = np.dot(l_cholesky, w_brownian[i])
+            price_array.append(self.initial_prices * np.exp(drift + diffusion))
+        price_array = np.asarray(price_array)
+        return price_array
 
-    def PriceMove(self, periods):
-        W = self.Brownian(periods)
-        return self.GBM(W, periods)
+    def price_move(self, periods):
+        # prices are assumed to move according to GBM
+        w = self.brownian(periods)
+        return self.geometric_brownian_motion(w, periods)
 
-    # simulate portfolio performance
-    def Simulate(self, paths, tcost, periods, seed):
+    def simulate(self, paths, transaction_cost, periods, seed):
+        # simulate portfolio performance
+        # paths: holds all simulated price paths
         cost = 0
         trade = 0
-        nRebalance = 0
-        decreaseReturn = 0
+        number_rebalances = 0
+        decrease_return = 0
         fig, ax = plt.subplots(nrows=1, ncols=1)
         np.random.seed(seed)
         for i in range(paths):
-            pricemovements = self.PriceMove(periods)
+            price_movements = self.price_move(periods)
             print("path %d: " % (i + 1))
-            tradePath, costPath, nRebalancePath, decreaseReturnPath = self.Rebalance(pricemovements, tcost, periods)
-            cost += costPath
-            trade += tradePath
-            nRebalance += nRebalancePath
-            decreaseReturn += decreaseReturnPath
+            trade_path, cost_path, n_rebalance_path, decrease_return_path = self.rebalance(price_movements, transaction_cost, periods)
+            cost += cost_path
+            trade += trade_path
+            number_rebalances += n_rebalance_path
+            decrease_return += decrease_return_path
             t = np.linspace(0, periods, periods + 1)
-            image, = ax.plot(t, pricemovements[:, 0], label="stock1")
-            image, = ax.plot(t, pricemovements[:, 1], label="stock2", ls='--')
+            image, = ax.plot(t, price_movements[:, 0], label="stock1")
+            image, = ax.plot(t, price_movements[:, 1], label="stock2", ls='--')
             plt.ylabel('stock price, $')
             plt.xlabel('time, day')
             plt.title('correlated brownian simulation')
             plt.draw()
             fig.savefig("simulate.png")
-        averageRebalance = nRebalance / paths
+        averageRebalance = number_rebalances / paths
         averageDollarTraded = trade / paths
         averageTcost = cost / paths
-        averageDecreaseReturn = decreaseReturn / paths
+        averageDecreaseReturn = decrease_return / paths
         print(
             "average number of rebalances: %.3f\naverage dollars traded: %.3f$\naverage transaction cost as percentage of book value: %.3f%%\nexpected transaction costs: %.3f%%"
             % (averageRebalance, averageDollarTraded, averageTcost * 100, averageDecreaseReturn * 100))
 
-    def Rebalance(self, pricemovements, tcost, periods):
+    def rebalance(self, price_movements, transaction_cost, periods):
+        # rebalance portfolio so that each asset is weighted with its initial weighting
+        # price_movements: pre calculated GBM price movements
+        # transaction_cost: Cost of a single transaction on one stock
+        # periods:
         trades = []
-        priceSpread = []
+        price_spread = []
         costs = []
-        nRebalance = 0
+        n_rebalance = 0
         # len(pricemovements) = periods + 1
         for i in range(1, periods + 1):
-            newPrices = pricemovements[i]
+            new_prices = price_movements[i]
             # update prices, dollar value, and weightings of a portfolio each time prices change
-            self.updatePrices(newPrices)
-            difference = np.subtract(self.weightings, self.initweightings)
+            self.update_prices(new_prices)
+            difference = np.subtract(self.weightings, self.initial_weightings)
             # max returns a (positive) percentage difference between the actual weigntings and the desired weightings
             if max(difference) >= self.rebalance_threshold:
                 # change the holdings so that the actual weightings are as desired
-                self.updateHoldings()
+                self.update_holdings()
                 # difference in weightings * total = change of the amount of dollar invested in two stocks
                 trade = np.sum(np.absolute(difference * self.total))
                 trades.append(trade)
-                costs.append(trade * tcost)
-                priceSpread.append(np.round(self.prices, 2))
-                nRebalance += 1
-        # pandaframe
-        data = {"price spread, $": priceSpread,
+                costs.append(trade * transaction_cost)
+                price_spread.append(np.round(self.prices, 2))
+                n_rebalance += 1
+        data = {"price spread, $": price_spread,
                 "size of the trade, $": trades,
                 "transaction cost, $": costs}
-        df = pd.DataFrame(data=data, index=range(1, nRebalance + 1))
+        df = pd.DataFrame(data=data, index=range(1, n_rebalance + 1))
         df.index.name = "#rebalancing"
-        print(df)
+        print(df) # TODO: make log function
         # return metrics
-        tradeTotal = sum(trades)
-        costTotal = tradeTotal * tcost
-        annualizedPeriods = periods / 252
-        annualizedReturn = (self.total / self.inittotal) ** (1 / annualizedPeriods) - 1
-        postcost = ((self.total - costTotal) / self.inittotal) ** (1 / annualizedPeriods) - 1
-        decreaseReturn = annualizedReturn - postcost
-        costTotalPer = costTotal / self.total
+        trade_total = sum(trades)
+        cost_total = trade_total * transaction_cost
+        annualized_periods = periods / 252
+        annualized_return = (self.total / self.initial_total) ** (1 / annualized_periods) - 1
+        value_minus_cost = ((self.total - cost_total) / self.initial_total) ** (1 / annualized_periods) - 1
+        decrease_return = annualized_return - value_minus_cost
+        cost_total_per = cost_total / self.total
         # set parameters back to initial value
         self.reset()
-        return tradeTotal, costTotalPer, nRebalance, decreaseReturn
+        return trade_total, cost_total_per, n_rebalance, decrease_return
 
     def reset(self):
-        self.weightings = self.initweightings
-        self.holdings = self.initholdings
-        self.prices = self.initprices
-        self.total = self.inittotal
+        self.weightings = self.initial_weightings
+        self.holdings = self.initial_holdings
+        self.prices = self.initial_prices
+        self.total = self.initial_total
 
-    def updatePrices(self, newPrices):
-        self.prices = newPrices
-        # dot product of the number of shares and price per share
-        self.total = np.dot(self.holdings, newPrices)
+    def update_prices(self, new_prices):
+        self.prices = new_prices
+        # dot product of the number of shares and price per share gives total portfolio value
+        self.total = np.dot(self.holdings, new_prices)
         # the weight of stocks after stock prices change = (number of share * price of stock per share)/total amount of asset
         self.weightings = [holding * price / self.total for price, holding in zip(self.prices, self.holdings)]
 
-    def updateHoldings(self):
-        self.holdings = [self.total * initWeight / price for initWeight, price in zip(self.initweightings, self.prices)]
+    def update_holdings(self):
+        # the holdings array gives the number of shares per symbol
+        self.holdings = [self.total * initWeight / price for initWeight, price in zip(self.initial_weightings, self.prices)]
+        # the weightings array gives the actual contribution of each symbol to the portfolio
         self.weightings = [price * holding / self.total for holding, price in zip(self.holdings, self.prices)]
 
-    # compute how tcost vary with respect to other variables
-    def decreaseReturn(self, pricemovements, tcost, periods):
-        costTotal = 0
-        for i in range(1, len(pricemovements)):
-            newPrices = pricemovements[i]
-            self.updatePrices(newPrices)
-            difference = np.subtract(self.weightings, self.initweightings)
+    # compute how transaction cost vary with respect to other variables
+    def decrease_return(self, price_movements, transaction_cost, periods):
+        cost_total = 0
+        for i in range(1, len(price_movements)):
+            new_prices = price_movements[i]
+            self.update_prices(new_prices)
+            difference = np.subtract(self.weightings, self.initial_weightings)
             if max(difference) >= self.rebalance_threshold:
-                self.updateHoldings()
+                self.update_holdings()
                 trade = np.sum(np.absolute(difference * self.total))
-                costTotal += trade * tcost
+                cost_total += trade * transaction_cost
         annualizedPeriods = periods / 252
-        annualizedReturn = (self.total / self.inittotal) ** (1 / annualizedPeriods) - 1
-        postcost = ((self.total - costTotal) / self.inittotal) ** (1 / annualizedPeriods) - 1
+        annualizedReturn = (self.total / self.initial_total) ** (1 / annualizedPeriods) - 1
+        postcost = ((self.total - cost_total) / self.initial_total) ** (1 / annualizedPeriods) - 1
         decreaseReturn = annualizedReturn - postcost
         self.reset()
         return decreaseReturn
@@ -173,8 +183,8 @@ class Portfolio(object):
         fig, ax = plt.subplots(nrows=1, ncols=1)
         np.random.seed(seed)
         for i in range(1, paths + 1):
-            pricemovements = self.PriceMove(periods)
-            decreaseReturn = self.decreaseReturn(pricemovements, tcost, periods)
+            pricemovements = self.price_move(periods)
+            decreaseReturn = self.decrease_return(pricemovements, tcost, periods)
             totalDecrease += decreaseReturn * 100
             if (i % step == 0):
                 meanDecrease.append(totalDecrease / i)
@@ -202,7 +212,7 @@ class Portfolio(object):
 
     def updateSec1Mean(self, sec1mean):
         self.means[0] = sec1mean
-        self.dailymeans = self.means / 252
+        self.daily_means = self.means / 252
 
     def solveCorr(self, paths, tcost, periods, seed):
         start = 0
@@ -213,9 +223,9 @@ class Portfolio(object):
             totalDecrease = 0
             self.updateCorr(x[i])
             np.random.seed(seed)
-            for i in range(paths):
-                pricemovements = self.PriceMove(periods)
-                decreaseReturn = self.decreaseReturn(pricemovements, tcost, periods)
+            for j in range(paths):
+                pricemovements = self.price_move(periods)
+                decreaseReturn = self.decrease_return(pricemovements, tcost, periods)
                 totalDecrease += decreaseReturn * 100
             meanDecrease = np.round(totalDecrease / paths, 1)
             y.append(meanDecrease)
@@ -244,9 +254,9 @@ class Portfolio(object):
             totalDecrease = 0
             self.updateSec1Vol(x[i])
             np.random.seed(seed)
-            for i in range(paths):
-                pricemovements = self.PriceMove(periods)
-                decreaseReturn = self.decreaseReturn(pricemovements, tcost, periods)
+            for j in range(paths):
+                pricemovements = self.price_move(periods)
+                decreaseReturn = self.decrease_return(pricemovements, tcost, periods)
                 totalDecrease += decreaseReturn * 100
             meanDecrease = np.round(totalDecrease / paths, 1)
             y.append(meanDecrease)
@@ -263,18 +273,25 @@ class Portfolio(object):
         print("coeff:", np.polyfit(x, y, 1))
 
     def solveSec1Mean(self, paths, tcost, periods, seed):
+        # What does it do?
+        # paths:
+        # tcost: Transaction cost?
+        # perdiods:
+        # seed: Random seed used for each path
         start = 0
         end = .5
+        # span a x grid
         x = np.linspace(0, .5, 11)
+        # number of paths to simulate
         paths = 500
         y = []
         for i in range(len(x)):
             totalDecrease = 0
             self.updateSec1Mean(x[i])
             np.random.seed(seed)
-            for i in range(paths):
-                pricemovements = self.PriceMove(periods)
-                decreaseReturn = self.decreaseReturn(pricemovements, tcost, periods)
+            for j in range(paths):
+                pricemovements = self.price_move(periods)
+                decreaseReturn = self.decrease_return(pricemovements, tcost, periods)
                 totalDecrease += decreaseReturn * 100
             meanDecrease = np.round(totalDecrease / paths, 1)
             y.append(meanDecrease)
@@ -290,7 +307,7 @@ class Portfolio(object):
             % (seed, self.sec1vol, self.sec2vol, self.corr, start, end, self.means[1], self.rebalance_threshold))
         print('coef:', np.polyfit(x, y, 1))
 
-    def solveThreshold(self, paths, tcost, periods, seed):
+    def solve_threshold(self, paths, tcost, periods, seed):
         start = 1
         end = 10
         x = np.linspace(1, 10, 11)
@@ -299,9 +316,9 @@ class Portfolio(object):
             totalDecrease = 0
             self.updateThreshold(x[i] / 100)
             np.random.seed(seed)
-            for i in range(paths):
-                pricemovements = self.PriceMove(periods)
-                decreaseReturn = self.decreaseReturn(pricemovements, tcost, periods)
+            for j in range(paths):
+                pricemovements = self.price_move(periods)
+                decreaseReturn = self.decrease_return(pricemovements, tcost, periods)
                 totalDecrease += decreaseReturn * 100
             meanDecrease = np.round(totalDecrease / paths, 1)
             y.append(meanDecrease)
@@ -348,7 +365,7 @@ def main():
     portfolio = Portfolio(args.sec1mean, args.sec2mean,
                           args.sec1vol, args.sec2vol, args.corr, args.rebalance_threshold)
     if args.simulate == True:
-        portfolio.Simulate(args.paths, args.tcost, args.periods, args.seed)
+        portfolio.simulate(args.paths, args.tcost, args.periods, args.seed)
     elif args.convergence_test == True:
         portfolio.Tests(args.paths, args.tcost, args.periods, args.step, args.seed)
     elif args.solveCorr == True:
@@ -356,7 +373,7 @@ def main():
     elif args.solveVol == True:
         portfolio.solveSec1Vol(args.paths, args.tcost, args.periods, args.seed)
     elif args.solveThreshold == True:
-        portfolio.solveThreshold(args.paths, args.tcost, args.periods, args.seed)
+        portfolio.solve_threshold(args.paths, args.tcost, args.periods, args.seed)
     elif args.solveReturn == True:
         portfolio.solveSec1Mean(args.paths, args.tcost, args.periods, args.seed)
 

@@ -90,10 +90,10 @@ def winsorize_by_group(data, group):
 
 def rolling_ew_corr_pairwise(df, halflife):
     all_results = {}
-    for col, left in df.iteritems():
-        all_results[col] = col_results = {}
-        for col, right in df.iteritems():
-            col_results[col] = pd.stats.moments.ewmcorr(left, right, span=(halflife - 1) / 2.0)
+    for left_col, left in df.iteritems():
+        all_results[left_col] = col_results = {}
+        for right_col, right in df.iteritems():
+            col_results[right_col] = pd.stats.moments.ewmcorr(left, right, span=(halflife - 1) / 2.0)
 
     ret = pd.Panel(all_results)
     ret = ret.swapaxes(0, 1, copy=False)
