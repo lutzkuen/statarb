@@ -1,5 +1,5 @@
 import opt
-from calc import *
+
 from loaddata import *
 import argparse
 

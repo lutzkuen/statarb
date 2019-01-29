@@ -1,13 +1,5 @@
-import numpy as np
-import pandas as pd
 import gc
-
-from scipy import stats
-# from pandas.stats.api import ols
-# from pandas.stats import moments
 from lmfit import minimize, Parameters, Parameter, report_errors
-from collections import defaultdict
-
 from util import *
 
 # INDUSTRIES = ['CONTAINR', 'HLTHSVCS', 'SPLTYRET', 'SPTYSTOR', 'DIVFIN', 'GASUTIL', 'BIOLIFE', 'SPTYCHEM', 'ALUMSTEL', 'AERODEF', 'COMMEQP', 'HOUSEDUR', 'CHEM', 'LEISPROD', 'AUTO', 'CONGLOM', 'HOMEBLDG', 'CNSTENG', 'LEISSVCS', 'OILGSCON', 'MEDIA', 'FOODPROD', 'PSNLPROD', 'OILGSDRL', 'SOFTWARE', 'BANKS', 'RESTAUR', 'FOODRET', 'ROADRAIL', 'APPAREL', 'INTERNET', 'NETRET', 'PAPER', 'WIRELESS', 'PHARMA', 'MGDHLTH', 'CNSTMACH', 'OILGSEQP', 'REALEST', 'COMPELEC', 'BLDGPROD', 'TRADECO', 'MULTUTIL', 'CNSTMATL', 'HLTHEQP', 'PRECMTLS', 'INDMACH', 'TRANSPRT', 'SEMIEQP', 'TELECOM', 'OILGSEXP', 'INSURNCE', 'AIRLINES', 'SEMICOND', 'ELECEQP', 'ELECUTIL', 'LIFEINS', 'COMSVCS', 'DISTRIB']
